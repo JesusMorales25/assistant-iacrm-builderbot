@@ -14,11 +14,18 @@ const processUserMessage = async (ctx, { flowDynamic, state, provider }) => {
     await typing(ctx, provider);
 
     try {
-        let numero = ctx.from; // Ej: 51977292965@s.whatsapp.net ó 274001783976102@lid
+        let numero = ctx.from; // Ej: 51977292965@s.whatsapp.net o 274001783976102@lid
 
+        // 🚨 Si viene con @lid intentamos resolver
         if (numero.endsWith("@lid")) {
             try {
-                const result = await provider.vendor.onWhatsApp(numero);
+                const result = await Promise.race([
+                    provider.vendor.onWhatsApp(numero),
+                    new Promise((_, reject) =>
+                        setTimeout(() => reject(new Error("Timeout onWhatsApp")), 2000)
+                    )
+                ]);
+
                 if (result && result[0]?.jid) {
                     numero = result[0].jid; // Ej: 51943097937@s.whatsapp.net
                 } else {
@@ -26,18 +33,19 @@ const processUserMessage = async (ctx, { flowDynamic, state, provider }) => {
                 }
             } catch (err) {
                 console.error("⚠️ Error resolviendo JID @lid:", err.message);
-                // en este caso, seguimos con el numero original (el @lid)
+                // seguimos con el numero original (el @lid)
             }
         }
 
-        // Normalizamos quitando el dominio (si tiene @algo)
+        // 🔎 Normalizamos quitando el sufijo (@s.whatsapp.net, @lid, etc.)
         const numeroLimpio = numero.replace(/@.*$/, "");
 
+        // 🚀 Enviamos al backend siempre algo válido
         const response = await axios.post(
             process.env.URL_BACKEND,
             {
                 mensaje: ctx.body,
-                numero: numeroLimpio, // ← siempre llega algo al backend
+                numero: numeroLimpio,
             },
             {
                 headers: {
@@ -54,6 +62,7 @@ const processUserMessage = async (ctx, { flowDynamic, state, provider }) => {
         await flowDynamic([{ body: "Error al procesar tu mensaje. Intenta más tarde." }]);
     }
 };
+
 
 
 const handleQueue = async (userId) => {
