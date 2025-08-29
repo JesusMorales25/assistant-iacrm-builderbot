@@ -14,18 +14,37 @@ const processUserMessage = async (ctx, { flowDynamic, state, provider }) => {
     await typing(ctx, provider);
 
     try {
-        const response = await axios.post(process.env.URL_BACKEND, 
-						{
-								mensaje: ctx.body,
-								numero: ctx.from
-						},
-						{
-								headers: {
-										"X-API-KEY": process.env.BOT_API_KEY
-								}
-						}
-				);
+        let numero = ctx.from; // Ej: 51977292965@s.whatsapp.net ó 274001783976102@lid
 
+        if (numero.endsWith("@lid")) {
+            try {
+                const result = await provider.vendor.onWhatsApp(numero);
+                if (result && result[0]?.jid) {
+                    numero = result[0].jid; // Ej: 51943097937@s.whatsapp.net
+                } else {
+                    console.warn("⚠️ No se pudo resolver @lid, se usará tal cual:", numero);
+                }
+            } catch (err) {
+                console.error("⚠️ Error resolviendo JID @lid:", err.message);
+                // en este caso, seguimos con el numero original (el @lid)
+            }
+        }
+
+        // Normalizamos quitando el dominio (si tiene @algo)
+        const numeroLimpio = numero.replace(/@.*$/, "");
+
+        const response = await axios.post(
+            process.env.URL_BACKEND,
+            {
+                mensaje: ctx.body,
+                numero: numeroLimpio, // ← siempre llega algo al backend
+            },
+            {
+                headers: {
+                    "X-API-KEY": process.env.BOT_API_KEY,
+                },
+            }
+        );
 
         const respuesta = response.data.respuesta;
         await flowDynamic([{ body: respuesta }]);
@@ -35,6 +54,7 @@ const processUserMessage = async (ctx, { flowDynamic, state, provider }) => {
         await flowDynamic([{ body: "Error al procesar tu mensaje. Intenta más tarde." }]);
     }
 };
+
 
 const handleQueue = async (userId) => {
     const queue = userQueues.get(userId);
